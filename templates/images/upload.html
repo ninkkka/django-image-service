@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block title %}Загрузка изображения{% endblock %}
+
+{% block content %}
+<h2>Загрузить новое изображение</h2>
+<form id="uploadForm" enctype="multipart/form-data">
+    {% csrf_token %}
+    <div style="margin-bottom: 15px;">
+        <label for="title">Название изображения:</label><br>
+        <input type="text" id="title" name="title" style="width: 300px; padding: 8px;">
+    </div>
+    
+    <div style="margin-bottom: 15px;">
+        <label for="image">Выберите файл:</label><br>
+        <input type="file" id="image" name="image" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp">
+    </div>
+    
+    <button type="submit" style="padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 4px;">
+        Загрузить
+    </button>
+</form>
+
+<div id="message" style="margin-top: 20px;"></div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData();
+    formData.append('title', document.getElementById('title').value);
+    formData.append('image', document.getElementById('image').files[0]);
+    
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    const csrfToken = getCookie('csrftoken');
+    
+    try {
+        const response = await fetch('/api/images/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken
+            },
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            document.getElementById('message').innerHTML = `
+                <div style="color: green; padding: 10px; background-color: #dff0d8; border-radius: 4px;">
+                    ✅ Изображение успешно загружено!<br>
+                    ID: ${result.id}<br>
+                    <a href="/image/${result.id}">Перейти к изображению</a>
+                </div>
+            `;
+            document.getElementById('uploadForm').reset();
+        } else {
+            document.getElementById('message').innerHTML = `
+                <div style="color: red; padding: 10px; background-color: #f2dede; border-radius: 4px;">
+                    ❌ Ошибка: ${result.error || result.detail || 'Неизвестная ошибка'}
+                </div>
+            `;
+        }
+    } catch (error) {
+        document.getElementById('message').innerHTML = `
+            <div style="color: red; padding: 10px; background-color: #f2dede; border-radius: 4px;">
+                ❌ Ошибка сети: ${error.message}
+            </div>
+        `;
+    }
+});
+</script>
+{% endblock %}

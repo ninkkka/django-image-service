@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+
+{% block title %}Просмотр изображения{% endblock %}
+
+{% block content %}
+<div id="imageDetail">
+    <h2>Загрузка информации об изображении...</h2>
+</div>
+
+<script>
+// Функция для получения CSRF токена из cookies
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Получаем ID изображения из контекста Django
+const imageId = '{{ image_id }}';
+
+async function loadImageDetail() {
+    try {
+        console.log('Загружаем информацию для ID:', imageId);
+        
+        const response = await fetch(`/api/images/${imageId}/`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const image = await response.json();
+        console.log('Получены данные:', image);
+        
+        const container = document.getElementById('imageDetail');
+        
+        // Форматируем размер файла
+        const fileSizeMB = image.size ? (image.size / (1024 * 1024)).toFixed(2) : '0.00';
+        
+        container.innerHTML = `
+            <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 300px;">
+                    <h2>${image.title || 'Без названия'}</h2>
+                    ${image.image_url ? 
+                        `<img src="${image.image_url}" alt="${image.title}" 
+                              style="max-width: 100%; max-height: 500px; border-radius: 5px; box-shadow: 0 3px 10px rgba(0,0,0,0.2);">` :
+                        '<p>Изображение не найдено</p>'
+                    }
+                </div>
+                
+                <div style="flex: 1; min-width: 300px;">
+                    <h3>Информация об изображении:</h3>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>ID:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><code>${image.id}</code></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Формат:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;">${image.format || 'неизвестно'}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Размер файла:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                                ${fileSizeMB} MB 
+                                ${image.size ? `(${image.size.toLocaleString()} байт)` : ''}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Разрешение:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                                ${image.width || 0} × ${image.height || 0} px
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Дата загрузки:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                                ${image.uploaded_at ? new Date(image.uploaded_at).toLocaleString() : 'неизвестно'}
+                            </td>
+                        </tr>
+                    </table>
+                    
+                    <div style="margin-top: 30px;">
+                        <button onclick="deleteImage()" 
+                                style="padding: 10px 20px; background-color: #f44336; color: white; 
+                                       border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">
+                            🗑️ Удалить изображение
+                        </button>
+                        
+                        ${image.image_url ? 
+                            `<a href="${image.image_url}" download 
+                               style="padding: 10px 20px; background-color: #2196F3; 
+                                      color: white; text-decoration: none; border-radius: 4px; display: inline-block;">
+                                ⬇️ Скачать оригинал
+                            </a>` : ''
+                        }
+                        
+                        <a href="{% url 'list_page' %}" 
+                           style="margin-left: 10px; padding: 10px 20px; background-color: #6c757d; 
+                                  color: white; text-decoration: none; border-radius: 4px; display: inline-block;">
+                            ↩️ Назад к списку
+                        </a>
+                    </div>
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Ошибка загрузки:', error);
+        document.getElementById('imageDetail').innerHTML = `
+            <div style="color: red; padding: 20px; background-color: #f8d7da; border-radius: 5px;">
+                <h3>Ошибка загрузки информации!</h3>
+                <p>Не удалось загрузить информацию об изображении.</p>
+                <p><strong>ID:</strong> ${imageId}</p>
+                <p><strong>Ошибка:</strong> ${error.message}</p>
+                <p>Проверьте:</p>
+                <ul>
+                    <li>Правильность ID изображения</li>
+                    <li>Что изображение существует в базе данных</li>
+                    <li>Консоль разработчика (F12) для подробной информации</li>
+                </ul>
+                <a href="{% url 'list_page' %}" style="color: #721c24; font-weight: bold;">
+                    ↩️ Вернуться к списку изображений
+                </a>
+            </div>
+        `;
+    }
+}
+
+async function deleteImage() {
+    if (!confirm('Вы уверены, что хотите удалить это изображение? Это действие нельзя отменить.')) {
+        return;
+    }
+    
+    try {
+        const csrfToken = getCookie('csrftoken');
+        
+        const response = await fetch(`/api/images/${imageId}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok || response.status === 204) {
+            alert('✅ Изображение успешно удалено!');
+            window.location.href = "{% url 'list_page' %}";
+        } else {
+            const error = await response.json().catch(() => ({detail: 'Unknown error'}));
+            alert(`❌ Ошибка при удалении: ${error.detail || error.message || 'Неизвестная ошибка'}`);
+        }
+    } catch (error) {
+        alert('❌ Ошибка сети: ' + error.message);
+    }
+}
+
+// Загружаем информацию при загрузке страницы
+document.addEventListener('DOMContentLoaded', loadImageDetail);
+</script>
+{% endblock %}
