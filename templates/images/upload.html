@@ -49,7 +49,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     const csrfToken = getCookie('csrftoken');
     
     try {
-        const response = await fetch('/api/images/', {
+        const response = await fetch('/api/images/upload/', {
             method: 'POST',
             headers: {
                 'X-CSRFToken': csrfToken

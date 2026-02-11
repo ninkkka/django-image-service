@@ -14,34 +14,26 @@ class ImageSerializer(serializers.ModelSerializer):
         }
     
     def get_image_url(self, obj):
-        request = self.context.get('request')
-        if obj.image and request:
-            try:
-                return request.build_absolute_uri(obj.image.url)
-            except:
-                return obj.image.url
+        if obj.image:
+            return obj.image.url
         return None
 
 class ImageListSerializer(serializers.ModelSerializer):
     """Упрощенный сериализатор для списка"""
     thumbnail_url = serializers.SerializerMethodField()
-    size_kb = serializers.SerializerMethodField()  # Добавили
+    size_kb = serializers.SerializerMethodField()
     
     class Meta:
         model = Image
         fields = ['id', 'title', 'thumbnail_url', 'uploaded_at', 'width', 'height', 'size_kb']  # Добавили поля
     
     def get_thumbnail_url(self, obj):
-        request = self.context.get('request')
-        if obj.image and request:
-            try:
-                return request.build_absolute_uri(obj.image.url)
-            except:
-                return obj.image.url
+        if obj.image:
+            return obj.image.url
         return None
     
 
-    def get_size_kb(self, obj):  # Новый метод
+    def get_size_kb(self, obj):
         """Размер в килобайтах"""
         if obj.size:
             return round(obj.size / 1024, 1)
