@@ -3,7 +3,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.renderers import TemplateHTMLRenderer
+from rest_framework.renderers import TemplateHTMLRenderer, JSONRenderer
 from django.shortcuts import render
 from .models import Image
 from .serializers import ImageSerializer, ImageListSerializer
@@ -58,6 +58,46 @@ class ImageViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, 
+            methods=['get'], 
+            permission_classes=[AllowAny],
+            authentication_classes=[],
+            renderer_classes=[JSONRenderer],
+            url_path='api-data')
+    def api_data(self, request, id=None):
+        """
+        Специальный эндпоинт для FastAPI сервиса.
+        Возвращает данные об изображении в формате, удобном для OCR.
+        """
+        try:
+            image = self.get_object()
+            
+            if image.image:
+                image_url = request.build_absolute_uri(image.image.url)
+            else:
+                image_url = None
+            
+            data = {
+                'id': str(image.id),
+                'title': image.title,
+                'image_url': image_url,
+                'uploaded_at': image.uploaded_at.isoformat(),
+                'size': image.size,
+                'width': image.width,
+                'height': image.height,
+                'format': image.format,
+            }
+            
+            logger.info(f"✅ API data sent for image {image.id}")
+            return Response(data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in api_data for image {id}: {str(e)}")
+            return Response(
+                {'detail': f'Ошибка при получении данных изображения: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @method_decorator(cache_page(60 * 5))
     @method_decorator(vary_on_headers('Authorization',))

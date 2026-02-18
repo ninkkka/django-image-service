@@ -21,3 +21,6 @@ geoip2==5.0.1
 sqlparse==0.5.5
 Pygments==2.19.2
 django-user-agents==0.4.0
+django-celery-results==2.5.1
+django-celery-beat==2.6.0
+celery==5.4.0

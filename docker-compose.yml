@@ -6,11 +6,14 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # healthcheck:
+    #   test: ["CMD", "redis-cli", "ping"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+    restart: unless-stopped
+    networks:
+      - image_service_network
 
   web:
     build: .
@@ -26,12 +29,136 @@ services:
       - "8000:8000"
     environment:
       DEBUG: "True"
-      SECRET_KEY: "django-insecure-change-this-in-production"
-      ALLOWED_HOSTS: "localhost,127.0.0.1"
+      SECRET_KEY: "${SECRET_KEY:-django-insecure-change-this-in-production}"
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-localhost,127.0.0.1}"
+      REDIS_URL: "redis://redis:6379/1"
+      # Email settings
+      EMAIL_HOST: "${EMAIL_HOST:-smtp.gmail.com}"
+      EMAIL_PORT: "${EMAIL_PORT:-587}"
+      EMAIL_USE_TLS: "${EMAIL_USE_TLS:-True}"
+      EMAIL_HOST_USER: "${EMAIL_HOST_USER:-}"
+      EMAIL_HOST_PASSWORD: "${EMAIL_HOST_PASSWORD:-}"
+      DEFAULT_FROM_EMAIL: "${DEFAULT_FROM_EMAIL:-noreply@example.com}"
+    depends_on:
+      - redis
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
+    restart: unless-stopped
+    networks:
+      - image_service_network
+
+  celery_worker:
+    build: .
+    command: celery -A config worker --loglevel=info
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    environment:
+      DEBUG: "True"
+      SECRET_KEY: "${SECRET_KEY:-django-insecure-change-this-in-production}"
+      REDIS_URL: "redis://redis:6379/1"
+      # Email settings
+      EMAIL_HOST: "${EMAIL_HOST:-smtp.gmail.com}"
+      EMAIL_PORT: "${EMAIL_PORT:-587}"
+      EMAIL_USE_TLS: "${EMAIL_USE_TLS:-True}"
+      EMAIL_HOST_USER: "${EMAIL_HOST_USER:-}"
+      EMAIL_HOST_PASSWORD: "${EMAIL_HOST_PASSWORD:-}"
+      DEFAULT_FROM_EMAIL: "${DEFAULT_FROM_EMAIL:-noreply@example.com}"
+    depends_on:
+      - redis
+      - web
+    # healthcheck:
+    #   test: ["CMD-SHELL", "celery -A config inspect ping || exit 1"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 30s
+    restart: unless-stopped
+    networks:
+      - image_service_network
+
+  celery_beat:
+    build: .
+    command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    environment:
+      DEBUG: "True"
+      SECRET_KEY: "${SECRET_KEY:-django-insecure-change-this-in-production}"
       REDIS_URL: "redis://redis:6379/1"
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
+      - web
+    restart: unless-stopped
+    networks:
+      - image_service_network
+
+  # ✅ НОВЫЙ СЕРВИС: FastAPI OCR
+  fastapi:
+    build: ./fastapi_service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./fastapi_service:/app
+      - media_volume:/app/media  # Доступ к медиа файлам
+    ports:
+      - "8001:8001"
+    environment:
+      DEBUG: "True"
+      DJANGO_API_URL: "http://web:8000/api"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      # Email settings
+      EMAIL_HOST: "${EMAIL_HOST:-smtp.gmail.com}"
+      EMAIL_PORT: "${EMAIL_PORT:-587}"
+      EMAIL_USE_TLS: "${EMAIL_USE_TLS:-True}"
+      EMAIL_HOST_USER: "${EMAIL_HOST_USER:-}"
+      EMAIL_HOST_PASSWORD: "${EMAIL_HOST_PASSWORD:-}"
+      DEFAULT_FROM_EMAIL: "${DEFAULT_FROM_EMAIL:-noreply@example.com}"
+      # Tesseract
+      TESSERACT_CMD: "/usr/bin/tesseract"
+    depends_on:
+      - redis
+      - web
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 30s
+    restart: unless-stopped
+    networks:
+      - image_service_network
+
+  # ✅ НОВЫЙ СЕРВИС: Celery Worker для FastAPI
+  fastapi_celery_worker:
+    build: ./fastapi_service
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    volumes:
+      - ./fastapi_service:/app
+      - media_volume:/app/media
+    environment:
+      DEBUG: "True"
+      DJANGO_API_URL: "http://web:8000/api"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+    depends_on:
+      - redis
+      - fastapi
+    # healthcheck:
+    #   test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping || exit 1"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 30s
+    restart: unless-stopped
+    networks:
+      - image_service_network
 
   prometheus:
     image: prom/prometheus:latest
@@ -45,14 +172,17 @@ services:
       - '--storage.tsdb.path=/prometheus'
     depends_on:
       - web
+    restart: unless-stopped
+    networks:
+      - image_service_network
 
   grafana:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - grafana_data:/var/lib/grafana
@@ -60,6 +190,9 @@ services:
       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
     depends_on:
       - prometheus
+    restart: unless-stopped
+    networks:
+      - image_service_network
 
 volumes:
   static_volume:
@@ -67,3 +200,7 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+
+networks:
+  image_service_network:
+    driver: bridge
